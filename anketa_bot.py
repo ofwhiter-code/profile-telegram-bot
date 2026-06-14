@@ -4,6 +4,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
 from telegram.ext import CallbackQueryHandler
+from database import save_user, get_user, delete_user, init_db
 
 #переменные, чтобы работали по порядку, хз
 NAME = 0
@@ -72,6 +73,8 @@ async def confirm(update:Update, context:ContextTypes.DEFAULT_TYPE):
         name = context.user_data.get("name")
         age = context.user_data.get("age")
         city = context.user_data.get("city")
+        user_id = update.effective_user.id
+        save_user(user_id, name, age, city) # Сохраняем в базу
         await query.message.reply_text(f"👤Your profile!:\n{name},\n{age} years old,\nliving in {city},\nWrite /profile anytime!")
     else:
         await query.message.reply_text("Ok! Profile creation cancelled. Write /start if you want to try again.")
@@ -85,9 +88,14 @@ async def help_command(update:Update, context:ContextTypes.DEFAULT_TYPE):
 
 #Сделал сам профиль, а также если нету данных что ему тоже писать. Как будет готов профиль, то он отправит данные а также кнопки с выбором изменить или удалить профиль
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    name = context.user_data.get("name", "не указано")
-    age = context.user_data.get("age", "не указано")
-    city = context.user_data.get("city", "не указано")
+    user_id = update.effective_user.id
+    user = get_user(user_id) #Берем из базы
+
+    if not user:
+        await update.message.reply_text("❌ No profile yet! Write /start to create one")
+        return
+    
+    name, age, city = user #распаковываем кортеж
     
     keyboard = [
         [InlineKeyboardButton("Edit profile✏️", callback_data="edit"),
@@ -142,18 +150,28 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 #Функции для изменения профиля
 async def save_edit_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     context.user_data["name"] = update.message.text
+    user = get_user(user_id)
+    save_user(user_id, update.message.text, user[1], user[2])
     await update.message.reply_text("✅Name updated! Write /profile to see.")
     return ConversationHandler.END
+
 async def save_edit_age(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = update.effective_user.id
+    user = get_user(user_id)
+    save_user(user_id, user[0], query.data, user[2])
     context.user_data["age"] = query.data
     await query.edit_message_text(f"✅Age updated: {query.data}")
     return ConversationHandler.END
 
 async def save_edit_sity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     context.user_data["city"] = update.message.text
+    user = get_user(user_id)
+    save_user(user_id, user[0], user[1, update.message.text])
     await update.message.reply_text("✅City updated! Write /profile to see")
     return ConversationHandler.END
 
@@ -178,8 +196,10 @@ conv_handler = ConversationHandler(
                CommandHandler("start",start)]
 )
 #Тут писал, команду профиль, создавал бота самого, а также чтобы edit и delete не мешались с ответом yes go да и тд.
-app = Application.builder().token("8868895970:AAHgMID1UFNmM1rAVfIcc5OwnRyz-Od3OOc").build()
+TOKEN = "INSERT YOUR TOKEN HERE"
+app = Application.builder().token(TOKEN).build()
 app.add_handler(conv_handler)
+init_db()
 print("BOT ZAPUSHEN")
 app.add_handler(CommandHandler("profile", profile))
 app.run_polling()
